@@ -10,55 +10,68 @@ import os
 
 from src.prompt import system_prompt
 
+# ------------------ INIT ------------------
 app = Flask(__name__)
 load_dotenv()
 
-# API KEYS
+# ENV VARIABLES
 PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 
-os.environ["PINECONE_API_KEY"] = PINECONE_API_KEY
-os.environ["GROQ_API_KEY"] = GROQ_API_KEY
-
-# EMBEDDINGS
-embeddings = download_hugging_face_embeddings()
-
-# VECTOR DB
-index_name = "medical-chatbot"
-
-docsearch = PineconeVectorStore.from_existing_index(
-    index_name=index_name,
-    embedding=embeddings
-)
-
-retriever = docsearch.as_retriever(
-    search_type="similarity",
-    search_kwargs={"k": 3}
-)
-
-# LLM
-chatModel = ChatGroq(
-    groq_api_key=GROQ_API_KEY,
-    model_name="llama-3.1-8b-instant",
-    temperature=0
-)
+# ------------------ GLOBALS (LAZY LOAD) ------------------
+retriever = None
+rag_chain = None
 
 
+# ------------------ LOAD RETRIEVER ------------------
+def get_retriever():
+    global retriever
 
-# PROMPT
-prompt = ChatPromptTemplate.from_messages([
-    ("system", system_prompt),
-    ("human", "{input}")
-])
+    if retriever is None:
+        embeddings = download_hugging_face_embeddings()
 
-# CHAIN
-qa_chain = create_stuff_documents_chain(chatModel, prompt)
-rag_chain = create_retrieval_chain(retriever, qa_chain)
+        docsearch = PineconeVectorStore.from_existing_index(
+            index_name="medical-chatbot",
+            embedding=embeddings
+        )
 
-# ROUTES
+        retriever = docsearch.as_retriever(
+            search_type="similarity",
+            search_kwargs={"k": 3}
+        )
+
+    return retriever
+
+
+# ------------------ LOAD CHAIN ------------------
+def get_chain():
+    global rag_chain
+
+    if rag_chain is None:
+        retriever_instance = get_retriever()
+
+        chatModel = ChatGroq(
+            groq_api_key=GROQ_API_KEY,
+            model_name="llama-3.1-8b-instant",
+            temperature=0
+        )
+
+        prompt = ChatPromptTemplate.from_messages([
+            ("system", system_prompt),
+            ("human", "{input}")
+        ])
+
+        qa_chain = create_stuff_documents_chain(chatModel, prompt)
+        rag_chain = create_retrieval_chain(retriever_instance, qa_chain)
+
+    return rag_chain
+
+
+# ------------------ ROUTES ------------------
 @app.route("/")
 def index():
     return render_template("chat.html")
+
 
 @app.route("/get", methods=["POST"])
 def chat():
@@ -68,7 +81,8 @@ def chat():
         return "Please enter a message."
 
     try:
-        response = rag_chain.invoke({"input": msg})
+        chain = get_chain()
+        response = chain.invoke({"input": msg})
         answer = response.get("answer", "Sorry, I couldn't understand.")
         return str(answer)
 
@@ -77,5 +91,7 @@ def chat():
         return "Something went wrong. Try again."
 
 
+# ------------------ MAIN ------------------
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=8080, debug=True)
+    port = int(os.environ.get("PORT", 10000))  # Render uses dynamic port
+    app.run(host="0.0.0.0", port=port)

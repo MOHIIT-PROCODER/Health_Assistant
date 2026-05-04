@@ -1,20 +1,13 @@
-flask
+flask==3.1.1
 gunicorn
-langchain
-langchain-community
-langchain-openai
-langchain-pinecone
-langchain-groq
-sentence-transformers
-pinecone-client
-python-dotenv
+python-dotenv==1.1.0
 
 langchain==0.3.26
-flask==3.1.1
-sentence-transformers==4.1.0
-pypdf==5.6.1
-python-dotenv==1.1.0
-langchain-pinecone==0.2.8
-langchain-openai==0.3.24
 langchain-community==0.3.26
--e .
+langchain-openai==0.3.24
+langchain-pinecone
+langchain-groq
+
+sentence-transformers==4.1.0
+pinecone-client
+pypdf==5.6.1
